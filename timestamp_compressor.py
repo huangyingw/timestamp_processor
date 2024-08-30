@@ -4,71 +4,79 @@ import re
 class TimestampCompressor:
     @staticmethod
     def compress(timestamp_string):
-        # 将时间戳拆分为小时和分钟
         timestamps = timestamp_string.split(",")
         compressed = []
-        prev_hour = 0
+        prev_minutes = 0
 
         for ts in timestamps:
             hour, minute = map(int, ts.split(":"))
+            current_minutes = hour * 60 + minute
 
-            # 计算小时差
-            hour_diff = hour - prev_hour
-            if hour_diff < 0:
-                hour_diff += 24  # 处理跨天的情况
+            if prev_minutes == 0:  # 第一个时间戳
+                compressed.append(chr(hour))
+                compressed.append(chr(minute))
+            else:
+                diff = current_minutes - prev_minutes
+                compressed.append(chr(diff))
 
-            # 使用一个字符来表示小时差和分钟
-            compressed.append(chr(hour_diff * 60 + minute))
-            prev_hour = hour
+            prev_minutes = current_minutes
 
         return "".join(compressed)
 
     @staticmethod
     def decompress(compressed_string):
         decompressed = []
-        current_hour = 0
+        prev_minutes = 0
 
-        for char in compressed_string:
-            value = ord(char)
-            hour_diff = value // 60
-            minute = value % 60
-
-            current_hour = (current_hour + hour_diff) % 24
-            decompressed.append(f"{current_hour:02d}:{minute:02d}")
+        for i, char in enumerate(compressed_string):
+            if i == 0:  # 第一个时间戳的小时
+                hour = ord(char)
+            elif i == 1:  # 第一个时间戳的分钟
+                minute = ord(char)
+                decompressed.append(f"{hour:02d}:{minute:02d}")
+                prev_minutes = hour * 60 + minute
+            else:  # 后续时间戳
+                diff = ord(char)
+                current_minutes = prev_minutes + diff
+                hour, minute = divmod(current_minutes, 60)
+                decompressed.append(f"{hour:02d}:{minute:02d}")
+                prev_minutes = current_minutes
 
         return ",".join(decompressed)
 
 
 def compress_filename(filename):
-    # 提取时间戳部分
     match = re.match(r"(.+)_part(\d+)\.txt", filename)
     if not match:
         return filename
 
     base_name, part_num = match.groups()
-    timestamps = base_name.split("_")
+    timestamps = base_name.replace("_", ",")
 
-    # 压缩时间戳
     compressor = TimestampCompressor()
-    compressed_timestamps = compressor.compress("_".join(timestamps))
+    compressed_timestamps = compressor.compress(timestamps)
 
-    # 使用压缩后的时间戳和部分编号创建新的文件名
-    return f"{compressed_timestamps}_p{part_num}.txt"
+    # 将压缩后的字符串转换为十六进制表示
+    hex_compressed = "".join(f"{ord(c):02x}" for c in compressed_timestamps)
+    return f"{hex_compressed}_p{part_num}.txt"
 
 
 def decompress_filename(compressed_filename):
-    # 提取压缩的时间戳部分和部分编号
-    match = re.match(r"(.+)_p(\d+)\.txt", compressed_filename)
+    match = re.match(r"([0-9a-f]+)_p(\d+)\.txt", compressed_filename)
     if not match:
         return compressed_filename
 
-    compressed_timestamps, part_num = match.groups()
+    hex_compressed, part_num = match.groups()
 
-    # 解压时间戳
+    # 将十六进制表示转换回原始的压缩字符串
+    original_compressed = "".join(
+        chr(int(hex_compressed[i : i + 2], 16))
+        for i in range(0, len(hex_compressed), 2)
+    )
+
     compressor = TimestampCompressor()
-    decompressed_timestamps = compressor.decompress(compressed_timestamps)
+    decompressed_timestamps = compressor.decompress(original_compressed)
 
-    # 使用解压后的时间戳和部分编号创建原始文件名
     return f"{decompressed_timestamps.replace(',', '_')}_part{part_num}.txt"
 
 
