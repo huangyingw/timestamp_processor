@@ -6,42 +6,48 @@ class TimestampCompressor:
     def compress(timestamp_string):
         timestamps = timestamp_string.split(",")
         compressed = []
-        prev_minutes = 0
+        prev_seconds = 0
 
         for ts in timestamps:
-            hour, minute = map(int, ts.split(":"))
-            current_minutes = hour * 60 + minute
+            hour, minute, second = map(int, ts.split(":"))
+            current_seconds = hour * 3600 + minute * 60 + second
 
-            if prev_minutes == 0:  # 第一个时间戳
+            if prev_seconds == 0:  # 第一个时间戳
                 compressed.append(chr(hour))
                 compressed.append(chr(minute))
+                compressed.append(chr(second))
             else:
-                diff = current_minutes - prev_minutes
-                compressed.append(chr(diff))
+                diff = current_seconds - prev_seconds
+                compressed.append(chr(diff // 256))
+                compressed.append(chr(diff % 256))
 
-            prev_minutes = current_minutes
+            prev_seconds = current_seconds
 
         return "".join(compressed)
 
     @staticmethod
     def decompress(compressed_string):
         decompressed = []
-        prev_minutes = 0
-
-        for i, char in enumerate(compressed_string):
-            if i == 0:  # 第一个时间戳的小时
-                hour = ord(char)
-            elif i == 1:  # 第一个时间戳的分钟
-                minute = ord(char)
-                decompressed.append(f"{hour:02d}:{minute:02d}")
-                prev_minutes = hour * 60 + minute
+        prev_seconds = 0
+        i = 0
+        while i < len(compressed_string):
+            if i == 0:  # 第一个时间戳
+                hour = ord(compressed_string[i])
+                minute = ord(compressed_string[i + 1])
+                second = ord(compressed_string[i + 2])
+                decompressed.append(f"{hour:02d}:{minute:02d}:{second:02d}")
+                prev_seconds = hour * 3600 + minute * 60 + second
+                i += 3
             else:  # 后续时间戳
-                diff = ord(char)
-                current_minutes = prev_minutes + diff
-                hour, minute = divmod(current_minutes, 60)
-                decompressed.append(f"{hour:02d}:{minute:02d}")
-                prev_minutes = current_minutes
-
+                diff = ord(compressed_string[i]) * 256 + ord(
+                    compressed_string[i + 1]
+                )
+                current_seconds = prev_seconds + diff
+                hour, rem = divmod(current_seconds, 3600)
+                minute, second = divmod(rem, 60)
+                decompressed.append(f"{hour:02d}:{minute:02d}:{second:02d}")
+                prev_seconds = current_seconds
+                i += 2
         return ",".join(decompressed)
 
 
@@ -50,8 +56,7 @@ def compress_filename(filename):
     if not match:
         return filename
 
-    base_name, part_num = match.groups()
-    timestamps = base_name.replace("_", ",")
+    timestamps, part_num = match.groups()
 
     compressor = TimestampCompressor()
     compressed_timestamps = compressor.compress(timestamps)
@@ -77,14 +82,12 @@ def decompress_filename(compressed_filename):
     compressor = TimestampCompressor()
     decompressed_timestamps = compressor.decompress(original_compressed)
 
-    return f"{decompressed_timestamps.replace(',', '_')}_part{part_num}.txt"
+    return f"{decompressed_timestamps}_part{part_num}.txt"
 
 
 # 测试代码
 if __name__ == "__main__":
-    original_timestamp_string = (
-        "14:19,15:57,18:24,20:07,20:51,21:20,22:31,23:43,24:27,25:08,30:51"
-    )
+    original_timestamp_string = "00:14:19,00:15:57,00:18:24,00:20:07,00:20:51,00:21:20,00:22:31,00:23:43,00:24:27,01:25:08,01:30:51"
     compressor = TimestampCompressor()
 
     compressed = compressor.compress(original_timestamp_string)
@@ -97,7 +100,7 @@ if __name__ == "__main__":
         f"Compression successful: {original_timestamp_string == decompressed}"
     )
 
-    original_filename = "14:19_15:57_18:24_20:07_20:51_21:20_22:31_23:43_24:27_25:08_30:51_part1.txt"
+    original_filename = "00:14:19,00:15:57,00:18:24,00:20:07,00:20:51,00:21:20,00:22:31,00:23:43,00:24:27,01:25:08,01:30:51_part1.txt"
     compressed_filename = compress_filename(original_filename)
     decompressed_filename = decompress_filename(compressed_filename)
 
